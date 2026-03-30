@@ -1,137 +1,63 @@
-"use client";
+﻿"use client";
 
-import { useMemo } from "react";
-import { cn } from "@/lib/utils/cn";
+import { cn } from "@/lib/utils";
 
-export interface ResourceMeterProps {
+interface ResourceMeterProps {
   label: string;
-  value: number; // 0-100 percentage
-  current: string; // e.g. "2.4 GB"
-  max: string; // e.g. "4 GB"
-  icon: React.ReactNode;
-  color: "blue" | "purple" | "green" | "orange" | "red";
+  value: number;
+  max: number;
+  unit?: string;
+  color?: string;
   size?: "sm" | "md" | "lg";
+  className?: string;
 }
 
-const COLOR_MAP = {
-  blue: {
-    stroke: "stroke-accent-blue",
-    bg: "bg-accent-blue/10",
-    text: "text-accent-blue",
-    trackStroke: "stroke-accent-blue/15",
-  },
-  purple: {
-    stroke: "stroke-accent-purple",
-    bg: "bg-accent-purple/10",
-    text: "text-accent-purple",
-    trackStroke: "stroke-accent-purple/15",
-  },
-  green: {
-    stroke: "stroke-accent-green",
-    bg: "bg-accent-green/10",
-    text: "text-accent-green",
-    trackStroke: "stroke-accent-green/15",
-  },
-  orange: {
-    stroke: "stroke-accent-orange",
-    bg: "bg-accent-orange/10",
-    text: "text-accent-orange",
-    trackStroke: "stroke-accent-orange/15",
-  },
-  red: {
-    stroke: "stroke-accent-red",
-    bg: "bg-accent-red/10",
-    text: "text-accent-red",
-    trackStroke: "stroke-accent-red/15",
-  },
-} as const;
+const sizeMap = {
+  sm: { svgSize: 80, strokeWidth: 6, radius: 34, fontSize: "text-sm" },
+  md: { svgSize: 120, strokeWidth: 8, radius: 50, fontSize: "text-lg" },
+  lg: { svgSize: 160, strokeWidth: 10, radius: 66, fontSize: "text-xl" },
+};
 
-const SIZE_MAP = {
-  sm: { svgSize: 80, strokeWidth: 6, radius: 34, fontSize: "text-lg" },
-  md: { svgSize: 100, strokeWidth: 7, radius: 42, fontSize: "text-xl" },
-  lg: { svgSize: 120, strokeWidth: 8, radius: 50, fontSize: "text-2xl" },
-} as const;
+const colorMap: Record<string, string> = {
+  emerald: "stroke-emerald-500",
+  blue: "stroke-blue-500",
+  purple: "stroke-purple-500",
+  amber: "stroke-amber-500",
+  red: "stroke-red-500",
+  cyan: "stroke-cyan-500",
+};
 
-/**
- * Animated circular progress meter for server resources.
- * Uses SVG with stroke-dasharray animation.
- */
-export function ResourceMeter({
-  label,
-  value,
-  current,
-  max,
-  icon,
-  color,
-  size = "md",
-}: ResourceMeterProps) {
-  const colors = COLOR_MAP[color];
-  const dims = SIZE_MAP[size];
-  const clampedValue = Math.min(100, Math.max(0, value));
+function getAutoColor(percent: number): string {
+  if (percent >= 90) return "stroke-red-500";
+  if (percent >= 70) return "stroke-amber-500";
+  return "stroke-emerald-500";
+}
 
-  // Determine dynamic color based on usage threshold
-  const dynamicColor = useMemo(() => {
-    if (clampedValue >= 90) return COLOR_MAP.red;
-    if (clampedValue >= 75) return COLOR_MAP.orange;
-    return colors;
-  }, [clampedValue, colors]);
-
+export function ResourceMeter({ label, value, max, unit = "%", color, size = "md", className }: ResourceMeterProps) {
+  const dims = sizeMap[size];
   const circumference = 2 * Math.PI * dims.radius;
+  const percent = max > 0 ? (value / max) * 100 : 0;
+  const clampedValue = Math.min(Math.max(percent, 0), 100);
   const dashOffset = circumference - (clampedValue / 100) * circumference;
+  const strokeColor = color ? (colorMap[color] || "stroke-emerald-500") : getAutoColor(clampedValue);
+
+  const svgStyle = { width: dims.svgSize, height: dims.svgSize };
+  const animStyle = { transition: "stroke-dashoffset 0.6s ease" };
 
   return (
-    <div className="dpx-card p-4 flex flex-col items-center gap-3">
-      {/* Circular gauge */}
-      <div className="relative" style= width: dims.svgSize, height: dims.svgSize >
-        <svg
-          width={dims.svgSize}
-          height={dims.svgSize}
-          viewBox={`0 0 ${dims.svgSize} ${dims.svgSize}`}
-          className="-rotate-90"
-        >
-          {/* Track */}
-          <circle
-            cx={dims.svgSize / 2}
-            cy={dims.svgSize / 2}
-            r={dims.radius}
-            fill="none"
-            strokeWidth={dims.strokeWidth}
-            className={dynamicColor.trackStroke}
-          />
-          {/* Progress */}
-          <circle
-            cx={dims.svgSize / 2}
-            cy={dims.svgSize / 2}
-            r={dims.radius}
-            fill="none"
-            strokeWidth={dims.strokeWidth}
-            strokeLinecap="round"
-            className={cn(dynamicColor.stroke, "transition-all duration-700 ease-out")}
-            style=
-              strokeDasharray: circumference,
-              strokeDashoffset: dashOffset,
-            
-          />
+    <div className={cn("dpx-card p-4 flex flex-col items-center gap-3", className)}>
+      <div className="relative" style={svgStyle}>
+        <svg width={dims.svgSize} height={dims.svgSize} viewBox={`0 0 ${dims.svgSize} ${dims.svgSize}`} className="transform -rotate-90">
+          <circle cx={dims.svgSize / 2} cy={dims.svgSize / 2} r={dims.radius} fill="none" stroke="currentColor" className="text-white/10" strokeWidth={dims.strokeWidth} />
+          <circle cx={dims.svgSize / 2} cy={dims.svgSize / 2} r={dims.radius} fill="none" className={strokeColor} strokeWidth={dims.strokeWidth} strokeDasharray={circumference} strokeDashoffset={dashOffset} strokeLinecap="round" style={animStyle} />
         </svg>
-
-        {/* Center text */}
         <div className="absolute inset-0 flex items-center justify-center">
-          <span className={cn(dims.fontSize, "font-bold", dynamicColor.text)}>
-            {Math.round(clampedValue)}%
+          <span className={cn("font-bold text-white", dims.fontSize)}>
+            {Math.round(clampedValue)}<span className="text-xs text-gray-400">{unit}</span>
           </span>
         </div>
       </div>
-
-      {/* Label + icon */}
-      <div className="flex items-center gap-2">
-        <span className={cn("flex-shrink-0", dynamicColor.text)}>{icon}</span>
-        <span className="text-sm font-semibold text-text-primary">{label}</span>
-      </div>
-
-      {/* Current / Max */}
-      <p className="text-xs text-text-tertiary">
-        {current} <span className="text-text-tertiary/50">/</span> {max}
-      </p>
+      <span className="text-xs text-gray-400 font-medium uppercase tracking-wider">{label}</span>
     </div>
   );
 }
