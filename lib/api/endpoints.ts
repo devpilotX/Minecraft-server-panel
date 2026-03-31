@@ -4,9 +4,10 @@
  * All paths are relative to the Pterodactyl server API.
  */
 
-import { PTERODACTYL_SERVER_ID } from "@/lib/config";
-
-const base = `/api/client/servers/${PTERODACTYL_SERVER_ID}`;
+// AFTER:
+const DEFAULT_SERVER_ID =
+  process.env["NEXT_PUBLIC_DEFAULT_SERVER_ID"] ?? "";
+const base = `/api/client/servers/${DEFAULT_SERVER_ID}`;
 
 /* ========== BACKUPS ========== */
 export const backups = {

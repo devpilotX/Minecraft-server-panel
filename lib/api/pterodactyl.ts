@@ -67,7 +67,9 @@ export const pteroClient = createPteroClient();
  * Used ONLY inside API routes (app/api/*).
  */
 export function createServerSidePteroClient(): AxiosInstance {
-  const panelUrl = process.env["NEXT_PUBLIC_PTERODACTYL_URL"];
+  const panelUrl =
+  process.env["NEXT_PUBLIC_PTERODACTYL_URL"] ??
+  process.env["PTERODACTYL_BASE_URL"];
   const apiKey = process.env["PTERODACTYL_API_KEY"];
 
   if (!panelUrl || !apiKey) {

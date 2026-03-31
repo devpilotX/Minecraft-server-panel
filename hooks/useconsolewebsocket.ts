@@ -3,7 +3,6 @@
 import { useEffect, useRef, useCallback } from "react";
 import { useConsoleStore } from "@/lib/store/useConsoleStore";
 import { useAppStore } from "@/lib/store/useAppStore";
-import { getSession } from "@/lib/auth/cookies";
 
 const WS_EVENTS = {
   AUTH: "auth",
@@ -97,20 +96,24 @@ export function useConsoleWebSocket() {
               break;
 
             case WS_EVENTS.STATS:
-              if (message.args?.[0]) {
-                try {
-                  const stats = JSON.parse(message.args[0]);
-                  useAppStore.getState().setResources({
-                    cpuPercent: stats.cpu_absolute ?? 0,
-                    memoryBytes: stats.memory_bytes ?? 0,
-                    diskBytes: stats.disk_bytes ?? 0,
-                    networkRxBytes: stats.network?.rx_bytes ?? 0,
-                    networkTxBytes: stats.network?.tx_bytes ?? 0,
-                    uptimeMs: stats.uptime ?? 0,
-                  });
-                } catch {}
-              }
-              break;
+  if (message.args?.[0]) {
+    try {
+      const stats = JSON.parse(message.args[0]);
+      useAppStore.getState().updateResources({
+        cpu_absolute: stats.cpu_absolute ?? 0,
+        memory_bytes: stats.memory_bytes ?? 0,
+        memory_limit_bytes: stats.memory_limit_bytes ?? 0,
+        disk_bytes: stats.disk_bytes ?? 0,
+        network: {
+          rx_bytes: stats.network?.rx_bytes ?? 0,
+          tx_bytes: stats.network?.tx_bytes ?? 0,
+        },
+        uptime: stats.uptime ?? 0,
+      });
+    } catch {}
+  }
+  break;
+          
 
             case WS_EVENTS.TOKEN_EXPIRING:
               // Re-authenticate before token expires

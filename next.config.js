@@ -2,7 +2,11 @@
 const nextConfig = {
   reactStrictMode: true,
   images: {
-    domains: ["mc-heads.net", "crafatar.com", "minotar.net"],
+    remotePatterns: [
+      { protocol: "https", hostname: "mc-heads.net" },
+      { protocol: "https", hostname: "crafatar.com" },
+      { protocol: "https", hostname: "minotar.net" },
+    ],
   },
 };
 

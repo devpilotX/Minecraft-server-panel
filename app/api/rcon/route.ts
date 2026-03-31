@@ -10,6 +10,20 @@ import {
  * Sends a command to the server via Pterodactyl's command endpoint.
  * Body: { command: string }
  */
+import { getSession } from "@/lib/auth/cookies";
+
+export async function POST(req: NextRequest) {
+  // ADD THIS BLOCK:
+  const session = await getSession();
+  if (!session) {
+    return NextResponse.json(
+      { error: "Unauthorized. Please log in." },
+      { status: 401 }
+    );
+  }
+
+  // ... rest of existing code
+}
 export async function POST(req: NextRequest) {
   try {
     const { command } = await req.json();

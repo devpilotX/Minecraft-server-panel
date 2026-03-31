@@ -13,17 +13,14 @@ function requireEnv(key: string): string {
 }
 
 // Pterodactyl Panel
-export const PTERODACTYL_BASE_URL =
-  process.env.PTERODACTYL_BASE_URL ?? "https://panel.devpilotx.com";
-export const PTERODACTYL_API_KEY =
-  process.env.PTERODACTYL_API_KEY ?? "";
+export const PTERODACTYL_BASE_URL = requireEnv("PTERODACTYL_BASE_URL");
+export const PTERODACTYL_API_KEY = requireEnv("PTERODACTYL_API_KEY");
 
 // Server
-export const PTERODACTYL_SERVER_ID =
-  process.env.PTERODACTYL_SERVER_ID ?? "c9f907a8-e953-476b-a349-534ccf14919e";
+export const PTERODACTYL_SERVER_ID = requireEnv("PTERODACTYL_SERVER_ID");
 
 // RCON (optional — for direct RCON if not going through Pterodactyl)
-export const RCON_HOST = process.env.RCON_HOST ?? "play.devpilotx.com";
+export const RCON_HOST = process.env.RCON_HOST ?? "localhost";
 export const RCON_PORT = parseInt(process.env.RCON_PORT ?? "25575", 10);
 export const RCON_PASSWORD = process.env.RCON_PASSWORD ?? "";
 
