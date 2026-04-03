@@ -1,29 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getSession } from "@/lib/auth/cookies";
 import {
   PTERODACTYL_BASE_URL,
   PTERODACTYL_API_KEY,
   PTERODACTYL_SERVER_ID,
 } from "@/lib/config";
 
-/**
- * Catch-all server API proxy: /api/server/[...path]
- * Maps to: Pterodactyl /api/client/servers/{id}/{path}
- *
- * Examples:
- *   /api/server/backups        → GET .../backups
- *   /api/server/files?path=/   → GET .../files/list?directory=/
- *   /api/server/databases      → GET .../databases
- *   /api/server/schedules      → GET .../schedules
- *   /api/server/network        → GET .../network/allocations
- *   /api/server/subusers       → GET .../users
- *   /api/server/activity       → GET .../activity
- *   /api/server/startup        → GET .../startup
- */
-
-const base = (path: string) =>
+const buildUrl = (path: string) =>
   `${PTERODACTYL_BASE_URL}/api/client/servers/${PTERODACTYL_SERVER_ID}/${path}`;
 
-// Route mapping: custom paths → Pterodactyl paths
 const ROUTE_MAP: Record<string, string> = {
   network: "network/allocations",
   subusers: "users",
@@ -31,9 +16,8 @@ const ROUTE_MAP: Record<string, string> = {
 
 function resolveTarget(pathSegments: string[]): string {
   const joined = pathSegments.join("/");
-  // Check if the first segment has a special mapping
   const first = pathSegments[0];
-  if (ROUTE_MAP[first]) {
+  if (first && ROUTE_MAP[first]) {
     const rest = pathSegments.slice(1).join("/");
     return rest ? `${ROUTE_MAP[first]}/${rest}` : ROUTE_MAP[first];
   }
@@ -44,8 +28,17 @@ async function proxy(
   req: NextRequest,
   pathSegments: string[],
 ): Promise<NextResponse> {
+  // Auth guard — every proxied request must have a valid session
+  const session = await getSession();
+  if (!session) {
+    return NextResponse.json(
+      { error: "Unauthorized" },
+      { status: 401 },
+    );
+  }
+
   const target = resolveTarget(pathSegments);
-  const targetUrl = base(target);
+  const targetUrl = buildUrl(target);
 
   const { searchParams } = new URL(req.url);
   const qs = searchParams.toString();
@@ -59,23 +52,7 @@ async function proxy(
       body = undefined;
     }
   }
-import { getSession } from "@/lib/auth/cookies";
 
-async function proxy(
-  req: NextRequest,
-  pathSegments: string[]
-): Promise<NextResponse> {
-  // ADD THIS BLOCK:
-  const session = await getSession();
-  if (!session) {
-    return NextResponse.json(
-      { error: "Unauthorized" },
-      { status: 401 }
-    );
-  }
-
-  // ... rest of existing code
-}
   try {
     const res = await fetch(fullUrl, {
       method: req.method,
@@ -91,8 +68,6 @@ async function proxy(
 
     if (contentType.includes("application/json")) {
       const data = await res.json();
-
-      // Normalize Pterodactyl's { data: [...] } → friendlier shape
       const normalized = normalizePterodactylResponse(data, pathSegments[0]);
       return NextResponse.json(normalized, { status: res.status });
     }
@@ -111,15 +86,17 @@ async function proxy(
   }
 }
 
-/**
- * Normalizes Pterodactyl's nested { object, data, attributes } response
- * into a flat, frontend-friendly shape.
- */
-function normalizePterodactylResponse(data: any, resource: string): any {
-  // List responses: { object: "list", data: [{ attributes: {...} }] }
-  if (data?.object === "list" && Array.isArray(data?.data)) {
-    const items = data.data.map((item: any) => item.attributes ?? item);
-    // Map to resource-specific keys
+function normalizePterodactylResponse(
+  data: Record<string, unknown>,
+  resource: string,
+): unknown {
+  const d = data as { object?: string; data?: unknown[]; attributes?: unknown };
+
+  if (d.object === "list" && Array.isArray(d.data)) {
+    const items = d.data.map(
+      (item: Record<string, unknown>) =>
+        (item as { attributes?: unknown }).attributes ?? item,
+    );
     const keyMap: Record<string, string> = {
       backups: "backups",
       databases: "databases",
@@ -133,18 +110,17 @@ function normalizePterodactylResponse(data: any, resource: string): any {
     return { [keyMap[resource] ?? resource]: items };
   }
 
-  // Single object: { object: "...", attributes: {...} }
-  if (data?.attributes) {
-    return data.attributes;
+  if (d.attributes) {
+    return d.attributes;
   }
 
   return data;
 }
 
-// AFTER:
+// Route handlers
 export async function GET(
   req: NextRequest,
-  { params }: { params: Promise<{ path: string[] }> }
+  { params }: { params: Promise<{ path: string[] }> },
 ) {
   const { path } = await params;
   return proxy(req, path);
@@ -152,7 +128,7 @@ export async function GET(
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: Promise<{ path: string[] }> }
+  { params }: { params: Promise<{ path: string[] }> },
 ) {
   const { path } = await params;
   return proxy(req, path);
@@ -160,7 +136,7 @@ export async function POST(
 
 export async function PUT(
   req: NextRequest,
-  { params }: { params: Promise<{ path: string[] }> }
+  { params }: { params: Promise<{ path: string[] }> },
 ) {
   const { path } = await params;
   return proxy(req, path);
@@ -168,7 +144,7 @@ export async function PUT(
 
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: Promise<{ path: string[] }> }
+  { params }: { params: Promise<{ path: string[] }> },
 ) {
   const { path } = await params;
   return proxy(req, path);
@@ -176,7 +152,7 @@ export async function PATCH(
 
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: Promise<{ path: string[] }> }
+  { params }: { params: Promise<{ path: string[] }> },
 ) {
   const { path } = await params;
   return proxy(req, path);

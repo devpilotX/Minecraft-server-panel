@@ -1,79 +1,81 @@
 /**
- * Extended API endpoint builders for Phase 12 features.
- * Append these to the existing endpoints.ts or merge into it.
+ * Extended API endpoint builders.
  * All paths are relative to the Pterodactyl server API.
+ * Uses getter to avoid reading process.env at module init on client.
  */
 
-// AFTER:
-const DEFAULT_SERVER_ID =
-  process.env["NEXT_PUBLIC_DEFAULT_SERVER_ID"] ?? "";
-const base = `/api/client/servers/${DEFAULT_SERVER_ID}`;
+function getBase(): string {
+  const serverId =
+    typeof window !== "undefined"
+      ? ""
+      : (process.env["NEXT_PUBLIC_DEFAULT_SERVER_ID"] ?? "");
+  return `/api/client/servers/${serverId}`;
+}
 
-/* ========== BACKUPS ========== */
 export const backups = {
-  list: () => `${base}/backups`,
-  create: () => `${base}/backups`,
-  detail: (uuid: string) => `${base}/backups/${uuid}`,
-  download: (uuid: string) => `${base}/backups/${uuid}/download`,
-  restore: (uuid: string) => `${base}/backups/${uuid}/restore`,
-  delete: (uuid: string) => `${base}/backups/${uuid}`,
-  lock: (uuid: string) => `${base}/backups/${uuid}/lock`,
+  list: () => `${getBase()}/backups`,
+  create: () => `${getBase()}/backups`,
+  detail: (uuid: string) => `${getBase()}/backups/${uuid}`,
+  download: (uuid: string) => `${getBase()}/backups/${uuid}/download`,
+  restore: (uuid: string) => `${getBase()}/backups/${uuid}/restore`,
+  delete: (uuid: string) => `${getBase()}/backups/${uuid}`,
+  lock: (uuid: string) => `${getBase()}/backups/${uuid}/lock`,
 };
 
-/* ========== DATABASES ========== */
 export const databases = {
-  list: () => `${base}/databases`,
-  create: () => `${base}/databases`,
-  delete: (id: string) => `${base}/databases/${id}`,
-  rotatePassword: (id: string) => `${base}/databases/${id}/rotate-password`,
+  list: () => `${getBase()}/databases`,
+  create: () => `${getBase()}/databases`,
+  delete: (id: string) => `${getBase()}/databases/${id}`,
+  rotatePassword: (id: string) =>
+    `${getBase()}/databases/${id}/rotate-password`,
 };
 
-/* ========== SCHEDULES ========== */
 export const schedules = {
-  list: () => `${base}/schedules`,
-  create: () => `${base}/schedules`,
-  detail: (id: string) => `${base}/schedules/${id}`,
-  update: (id: string) => `${base}/schedules/${id}`,
-  delete: (id: string) => `${base}/schedules/${id}`,
+  list: () => `${getBase()}/schedules`,
+  create: () => `${getBase()}/schedules`,
+  detail: (id: string) => `${getBase()}/schedules/${id}`,
+  update: (id: string) => `${getBase()}/schedules/${id}`,
+  delete: (id: string) => `${getBase()}/schedules/${id}`,
   tasks: {
-    list: (scheduleId: string) => `${base}/schedules/${scheduleId}/tasks`,
-    create: (scheduleId: string) => `${base}/schedules/${scheduleId}/tasks`,
-    update: (scheduleId: string, taskId: string) => `${base}/schedules/${scheduleId}/tasks/${taskId}`,
-    delete: (scheduleId: string, taskId: string) => `${base}/schedules/${scheduleId}/tasks/${taskId}`,
+    list: (scheduleId: string) =>
+      `${getBase()}/schedules/${scheduleId}/tasks`,
+    create: (scheduleId: string) =>
+      `${getBase()}/schedules/${scheduleId}/tasks`,
+    update: (scheduleId: string, taskId: string) =>
+      `${getBase()}/schedules/${scheduleId}/tasks/${taskId}`,
+    delete: (scheduleId: string, taskId: string) =>
+      `${getBase()}/schedules/${scheduleId}/tasks/${taskId}`,
   },
-  execute: (id: string) => `${base}/schedules/${id}/execute`,
+  execute: (id: string) => `${getBase()}/schedules/${id}/execute`,
 };
 
-/* ========== NETWORK / ALLOCATIONS ========== */
 export const network = {
-  list: () => `${base}/network/allocations`,
-  assign: () => `${base}/network/allocations`,
-  setPrimary: (id: string) => `${base}/network/allocations/${id}/primary`,
-  setNote: (id: string) => `${base}/network/allocations/${id}`,
-  unassign: (id: string) => `${base}/network/allocations/${id}`,
+  list: () => `${getBase()}/network/allocations`,
+  assign: () => `${getBase()}/network/allocations`,
+  setPrimary: (id: string) =>
+    `${getBase()}/network/allocations/${id}/primary`,
+  setNote: (id: string) => `${getBase()}/network/allocations/${id}`,
+  unassign: (id: string) => `${getBase()}/network/allocations/${id}`,
 };
 
-/* ========== SUBUSERS ========== */
 export const subusers = {
-  list: () => `${base}/users`,
-  create: () => `${base}/users`,
-  detail: (uuid: string) => `${base}/users/${uuid}`,
-  update: (uuid: string) => `${base}/users/${uuid}`,
-  delete: (uuid: string) => `${base}/users/${uuid}`,
+  list: () => `${getBase()}/users`,
+  create: () => `${getBase()}/users`,
+  detail: (uuid: string) => `${getBase()}/users/${uuid}`,
+  update: (uuid: string) => `${getBase()}/users/${uuid}`,
+  delete: (uuid: string) => `${getBase()}/users/${uuid}`,
 };
 
-/* ========== ACTIVITY LOG ========== */
 export const activity = {
-  list: () => `${base}/activity`,
+  list: () => `${getBase()}/activity`,
 };
 
-/* ========== STARTUP / SETTINGS ========== */
 export const settings = {
-  rename: () => `${base}/settings/rename`,
-  reinstall: () => `${base}/settings/reinstall`,
+  rename: () => `${getBase()}/settings/rename`,
+  reinstall: () => `${getBase()}/settings/reinstall`,
 };
 
 export const startup = {
-  list: () => `${base}/startup`,
-  update: () => `${base}/startup/variable`,
+  list: () => `${getBase()}/startup`,
+  update: () => `${getBase()}/startup/variable`,
 };

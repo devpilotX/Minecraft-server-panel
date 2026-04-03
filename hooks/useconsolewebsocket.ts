@@ -1,242 +1,260 @@
 "use client";
 
 import { useEffect, useRef, useCallback } from "react";
-import { useConsoleStore } from "@/lib/store/useConsoleStore";
-import { useAppStore } from "@/lib/store/useAppStore";
+import { useConsoleStore } from "@/lib/store/useconsolestore";
+import { useAppStore } from "@/lib/store/useappstore";
+import type { WebSocketStats } from "@/types/pterodactyl";
 
 const WS_EVENTS = {
   AUTH: "auth",
+  AUTH_SUCCESS: "auth success",
   CONSOLE_OUTPUT: "console output",
   INSTALL_OUTPUT: "install output",
   STATUS: "status",
   STATS: "stats",
   TOKEN_EXPIRING: "token expiring",
   TOKEN_EXPIRED: "token expired",
+  JWT_ERROR: "jwt error",
+  DAEMON_ERROR: "daemon error",
 } as const;
+
+const MAX_RECONNECT_ATTEMPTS = 10;
+const BACKOFF_BASE_MS = 1000;
+const BACKOFF_MAX_MS = 30_000;
 
 /**
  * WebSocket hook for Pterodactyl console streaming.
- * Connects to the panel's WebSocket, authenticates, and streams console output.
- * Auto-reconnects on disconnect with exponential backoff.
+ * Connects, authenticates, streams output, auto-reconnects.
  */
 export function useConsoleWebSocket() {
   const wsRef = useRef<WebSocket | null>(null);
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttemptsRef = useRef(0);
-  const maxReconnectAttempts = 10;
+  const isMountedRef = useRef(true);
+  const isIntentionalCloseRef = useRef(false);
 
-  const addLine = useConsoleStore((s) => s.addLine);
-  const setConnected = useConsoleStore((s) => s.setConnected);
+  const appendOutput = useConsoleStore((s) => s.appendOutput);
+  const setConnectionStatus = useConsoleStore((s) => s.setConnectionStatus);
   const serverId = useAppStore((s) => s.server.serverId);
+  const updateResources = useAppStore((s) => s.updateResources);
+  const setPowerState = useAppStore((s) => s.setPowerState);
 
-  const connect = useCallback(async () => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) return;
-
-    try {
-      // Get WebSocket credentials from our API proxy
-      const res = await fetch(`/api/pterodactyl/servers/${serverId}/websocket`);
-      if (!res.ok) {
-        console.error("[Console WS] Failed to get WebSocket credentials");
-        scheduleReconnect();
-        return;
-      }
-
-      const { data } = await res.json();
-      const { token, socket: socketUrl } = data;
-
-      const ws = new WebSocket(socketUrl);
-      wsRef.current = ws;
-
-      ws.onopen = () => {
-        // Authenticate immediately
-        ws.send(JSON.stringify({
-          event: WS_EVENTS.AUTH,
-          args: [token],
-        }));
-        setConnected(true);
-        reconnectAttemptsRef.current = 0;
-        addLine({
-          text: "\x1b[32m[DevPilotX]\x1b[0m Connected to console",
-          timestamp: new Date().toISOString(),
-          type: "system",
-        });
-      };
-
-      ws.onmessage = (event) => {
-        try {
-          const message = JSON.parse(event.data);
-
-          switch (message.event) {
-            case WS_EVENTS.CONSOLE_OUTPUT:
-              if (message.args?.[0]) {
-                const text = message.args[0];
-                const type = detectLogLevel(text);
-                addLine({
-                  text,
-                  timestamp: new Date().toISOString(),
-                  type,
-                });
-              }
-              break;
-
-            case WS_EVENTS.INSTALL_OUTPUT:
-              if (message.args?.[0]) {
-                addLine({
-                  text: `\x1b[33m[Install]\x1b[0m ${message.args[0]}`,
-                  timestamp: new Date().toISOString(),
-                  type: "system",
-                });
-              }
-              break;
-
-            case WS_EVENTS.STATUS:
-              if (message.args?.[0]) {
-                useAppStore.getState().setServerStatus(message.args[0]);
-              }
-              break;
-
-            case WS_EVENTS.STATS:
-  if (message.args?.[0]) {
-    try {
-      const stats = JSON.parse(message.args[0]);
-      useAppStore.getState().updateResources({
-        cpu_absolute: stats.cpu_absolute ?? 0,
-        memory_bytes: stats.memory_bytes ?? 0,
-        memory_limit_bytes: stats.memory_limit_bytes ?? 0,
-        disk_bytes: stats.disk_bytes ?? 0,
-        network: {
-          rx_bytes: stats.network?.rx_bytes ?? 0,
-          tx_bytes: stats.network?.tx_bytes ?? 0,
-        },
-        uptime: stats.uptime ?? 0,
-      });
-    } catch {}
-  }
-  break;
-          
-
-            case WS_EVENTS.TOKEN_EXPIRING:
-              // Re-authenticate before token expires
-              refreshToken();
-              break;
-
-            case WS_EVENTS.TOKEN_EXPIRED:
-              addLine({
-                text: "\x1b[31m[DevPilotX]\x1b[0m Token expired, reconnecting...",
-                timestamp: new Date().toISOString(),
-                type: "system",
-              });
-              disconnect();
-              connect();
-              break;
-          }
-        } catch (err) {
-          console.error("[Console WS] Parse error:", err);
-        }
-      };
-
-      ws.onerror = () => {
-        console.error("[Console WS] Connection error");
-      };
-
-      ws.onclose = () => {
-        setConnected(false);
-        addLine({
-          text: "\x1b[31m[DevPilotX]\x1b[0m Disconnected from console",
-          timestamp: new Date().toISOString(),
-          type: "system",
-        });
-        scheduleReconnect();
-      };
-    } catch (err) {
-      console.error("[Console WS] Connection failed:", err);
-      scheduleReconnect();
-    }
-  }, [serverId, addLine, setConnected]);
-
-  const disconnect = useCallback(() => {
+  const cleanup = useCallback(() => {
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current);
       reconnectTimeoutRef.current = null;
     }
     if (wsRef.current) {
+      isIntentionalCloseRef.current = true;
       wsRef.current.close();
       wsRef.current = null;
     }
-    setConnected(false);
-  }, [setConnected]);
+  }, []);
 
-  const sendCommand = useCallback((command: string) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({
-        event: "send command",
-        args: [command],
-      }));
-      addLine({
-        text: `\x1b[36m> ${command}\x1b[0m`,
-        timestamp: new Date().toISOString(),
-        type: "command",
-      });
+  const getBackoffDelay = useCallback((): number => {
+    return Math.min(
+      BACKOFF_BASE_MS * Math.pow(2, reconnectAttemptsRef.current),
+      BACKOFF_MAX_MS,
+    );
+  }, []);
+
+  const connect = useCallback(async () => {
+    if (!isMountedRef.current || !serverId) return;
+
+    cleanup();
+    isIntentionalCloseRef.current = false;
+    setConnectionStatus("connecting");
+
+    try {
+      const res = await fetch(`/api/server/websocket`);
+      if (!res.ok) {
+        throw new Error(`Failed to get WebSocket credentials (${res.status})`);
+      }
+
+      const { data } = await res.json();
+      const { token, socket: socketUrl } = data;
+
+      if (!isMountedRef.current) return;
+
+      const ws = new WebSocket(socketUrl);
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        if (!isMountedRef.current) return;
+        ws.send(JSON.stringify({ event: WS_EVENTS.AUTH, args: [token] }));
+      };
+
+      ws.onmessage = (event) => {
+        if (!isMountedRef.current) return;
+
+        try {
+          const message = JSON.parse(event.data);
+
+          switch (message.event) {
+            case WS_EVENTS.AUTH_SUCCESS:
+              setConnectionStatus("connected");
+              reconnectAttemptsRef.current = 0;
+              appendOutput(
+                "\x1b[32m[DevPilotX]\x1b[0m Connected to console",
+              );
+              break;
+
+            case WS_EVENTS.CONSOLE_OUTPUT:
+              if (message.args?.[0]) {
+                appendOutput(message.args[0]);
+              }
+              break;
+
+            case WS_EVENTS.INSTALL_OUTPUT:
+              if (message.args?.[0]) {
+                appendOutput(
+                  `\x1b[33m[Install]\x1b[0m ${message.args[0]}`,
+                );
+              }
+              break;
+
+            case WS_EVENTS.STATUS:
+              if (message.args?.[0]) {
+                setPowerState(message.args[0]);
+              }
+              break;
+
+            case WS_EVENTS.STATS:
+              if (message.args?.[0]) {
+                try {
+                  const stats = JSON.parse(
+                    message.args[0],
+                  ) as WebSocketStats;
+                  updateResources(stats);
+                  if (stats.state) {
+                    setPowerState(stats.state);
+                  }
+                } catch {
+                  /* Ignore malformed stats */
+                }
+              }
+              break;
+
+            case WS_EVENTS.TOKEN_EXPIRING:
+              void refreshToken();
+              break;
+
+            case WS_EVENTS.TOKEN_EXPIRED:
+            case WS_EVENTS.JWT_ERROR:
+              appendOutput(
+                "\x1b[31m[DevPilotX]\x1b[0m Token expired, reconnecting...",
+              );
+              void connect();
+              break;
+
+            case WS_EVENTS.DAEMON_ERROR:
+              if (message.args?.[0]) {
+                appendOutput(
+                  `\x1b[1;31m[Daemon Error] ${message.args[0]}\x1b[0m`,
+                );
+              }
+              break;
+          }
+        } catch {
+          /* Ignore unparseable messages */
+        }
+      };
+
+      ws.onerror = () => {
+        if (!isMountedRef.current) return;
+        appendOutput(
+          "\x1b[1;31m[DevPilotX]\x1b[0m WebSocket error occurred.",
+        );
+      };
+
+      ws.onclose = () => {
+        if (!isMountedRef.current) return;
+
+        if (isIntentionalCloseRef.current) {
+          setConnectionStatus("disconnected");
+          return;
+        }
+
+        setConnectionStatus("reconnecting");
+        scheduleReconnect();
+      };
+    } catch (err) {
+      if (!isMountedRef.current) return;
+      console.error("[Console WS] Connection failed:", err);
+      setConnectionStatus("reconnecting");
+      scheduleReconnect();
     }
-  }, [addLine]);
+  }, [
+    serverId,
+    cleanup,
+    appendOutput,
+    setConnectionStatus,
+    updateResources,
+    setPowerState,
+  ]);
 
   const refreshToken = useCallback(async () => {
     try {
-      const res = await fetch(`/api/pterodactyl/servers/${serverId}/websocket`);
+      const res = await fetch(`/api/server/websocket`);
       if (!res.ok) return;
       const { data } = await res.json();
       if (wsRef.current?.readyState === WebSocket.OPEN) {
-        wsRef.current.send(JSON.stringify({
-          event: WS_EVENTS.AUTH,
-          args: [data.token],
-        }));
+        wsRef.current.send(
+          JSON.stringify({ event: WS_EVENTS.AUTH, args: [data.token] }),
+        );
       }
-    } catch {}
-  }, [serverId]);
+    } catch {
+      /* If refresh fails, onclose will trigger reconnect */
+    }
+  }, []);
 
   const scheduleReconnect = useCallback(() => {
-    if (reconnectAttemptsRef.current >= maxReconnectAttempts) {
-      addLine({
-        text: "\x1b[31m[DevPilotX]\x1b[0m Max reconnect attempts reached. Refresh the page.",
-        timestamp: new Date().toISOString(),
-        type: "system",
-      });
+    if (reconnectAttemptsRef.current >= MAX_RECONNECT_ATTEMPTS) {
+      appendOutput(
+        "\x1b[31m[DevPilotX]\x1b[0m Max reconnect attempts reached. Refresh the page.",
+      );
+      setConnectionStatus("disconnected");
       return;
     }
 
-    const delay = Math.min(1000 * Math.pow(2, reconnectAttemptsRef.current), 30000);
+    const delay = getBackoffDelay();
     reconnectAttemptsRef.current++;
 
-    addLine({
-      text: `\x1b[33m[DevPilotX]\x1b[0m Reconnecting in ${delay / 1000}s... (attempt ${reconnectAttemptsRef.current}/${maxReconnectAttempts})`,
-      timestamp: new Date().toISOString(),
-      type: "system",
-    });
+    appendOutput(
+      `\x1b[33m[DevPilotX]\x1b[0m Reconnecting in ${(delay / 1000).toFixed(0)}s... (attempt ${reconnectAttemptsRef.current}/${MAX_RECONNECT_ATTEMPTS})`,
+    );
 
-    reconnectTimeoutRef.current = setTimeout(connect, delay);
-  }, [connect, addLine]);
+    reconnectTimeoutRef.current = setTimeout(() => {
+      void connect();
+    }, delay);
+  }, [connect, appendOutput, setConnectionStatus, getBackoffDelay]);
 
-  // Auto-connect on mount, disconnect on unmount
+  const disconnect = useCallback(() => {
+    cleanup();
+    setConnectionStatus("disconnected");
+  }, [cleanup, setConnectionStatus]);
+
+  const sendCommand = useCallback(
+    (command: string) => {
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(
+          JSON.stringify({ event: "send command", args: [command] }),
+        );
+        appendOutput(`\x1b[36m> ${command}\x1b[0m`);
+      }
+    },
+    [appendOutput],
+  );
+
   useEffect(() => {
-    connect();
-    return () => disconnect();
-  }, [connect, disconnect]);
+    isMountedRef.current = true;
+    void connect();
+
+    return () => {
+      isMountedRef.current = false;
+      cleanup();
+    };
+  }, [connect, cleanup]);
 
   return { sendCommand, disconnect, reconnect: connect };
-}
-
-/* ========== HELPERS ========== */
-
-function detectLogLevel(
-  text: string,
-): "info" | "warn" | "error" | "system" | "command" {
-  const stripped = text.replace(/\x1b\[[0-9;]*m/g, "").toLowerCase();
-  if (stripped.includes("[warn") || stripped.includes("warning")) return "warn";
-  if (
-    stripped.includes("[error") ||
-    stripped.includes("[severe") ||
-    stripped.includes("exception") ||
-    stripped.includes("caused by")
-  ) return "error";
-  return "info";
 }

@@ -1,13 +1,9 @@
 import { create } from "zustand";
 import { type ConnectionStatus } from "@/types/app";
 
-/* ========== CONSTANTS ========== */
-
 const MAX_OUTPUT_LINES = 5000;
 const MAX_HISTORY_ENTRIES = 100;
 const HISTORY_STORAGE_PREFIX = "devpilotx_cmd_history_";
-
-/* ========== TYPES ========== */
 
 interface ConsoleLine {
   id: string;
@@ -16,12 +12,10 @@ interface ConsoleLine {
 }
 
 interface ConsoleState {
-  /* Output */
   outputLines: ConsoleLine[];
   appendOutput: (text: string) => void;
   clearOutput: () => void;
 
-  /* Command history */
   commandHistory: string[];
   historyIndex: number;
   currentInput: string;
@@ -30,27 +24,27 @@ interface ConsoleState {
   setCurrentInput: (input: string) => void;
   resetHistoryNavigation: () => void;
 
-  /* Connection status */
   connectionStatus: ConnectionStatus;
   setConnectionStatus: (status: ConnectionStatus) => void;
 
-  /* Persistence helpers */
   loadHistory: (serverId: string) => void;
   saveHistory: (serverId: string) => void;
 }
 
-/* ========== LINE ID GENERATOR ========== */
-
+/**
+ * Generates a unique line ID using crypto when available,
+ * falling back to timestamp + counter.
+ */
 let lineCounter = 0;
 function generateLineId(): string {
   lineCounter += 1;
+  if (typeof crypto !== "undefined" && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
   return `line-${Date.now().toString(36)}-${lineCounter.toString(36)}`;
 }
 
-/* ========== STORE ========== */
-
 export const useConsoleStore = create<ConsoleState>()((set, get) => ({
-  /* Output */
   outputLines: [],
   appendOutput: (text) =>
     set((state) => {
@@ -60,14 +54,15 @@ export const useConsoleStore = create<ConsoleState>()((set, get) => ({
         timestamp: Date.now(),
       };
       const updated = [...state.outputLines, newLine];
-      if (updated.length > MAX_OUTPUT_LINES) {
-        return { outputLines: updated.slice(-MAX_OUTPUT_LINES) };
-      }
-      return { outputLines: updated };
+      return {
+        outputLines:
+          updated.length > MAX_OUTPUT_LINES
+            ? updated.slice(-MAX_OUTPUT_LINES)
+            : updated,
+      };
     }),
   clearOutput: () => set({ outputLines: [] }),
 
-  /* Command history */
   commandHistory: [],
   historyIndex: -1,
   currentInput: "",
@@ -77,21 +72,18 @@ export const useConsoleStore = create<ConsoleState>()((set, get) => ({
       const trimmed = command.trim();
       if (trimmed.length === 0) return state;
 
-      const lastCommand = state.commandHistory[state.commandHistory.length - 1];
+      const lastCommand =
+        state.commandHistory[state.commandHistory.length - 1];
       if (lastCommand === trimmed) {
         return { historyIndex: -1, currentInput: "" };
       }
 
       const updated = [...state.commandHistory, trimmed];
-      if (updated.length > MAX_HISTORY_ENTRIES) {
-        return {
-          commandHistory: updated.slice(-MAX_HISTORY_ENTRIES),
-          historyIndex: -1,
-          currentInput: "",
-        };
-      }
       return {
-        commandHistory: updated,
+        commandHistory:
+          updated.length > MAX_HISTORY_ENTRIES
+            ? updated.slice(-MAX_HISTORY_ENTRIES)
+            : updated,
         historyIndex: -1,
         currentInput: "",
       };
@@ -106,17 +98,13 @@ export const useConsoleStore = create<ConsoleState>()((set, get) => ({
     let newIndex: number;
 
     if (direction === "up") {
-      if (historyIndex === -1) {
-        newIndex = commandHistory.length - 1;
-      } else if (historyIndex > 0) {
-        newIndex = historyIndex - 1;
-      } else {
-        newIndex = 0;
-      }
+      newIndex =
+        historyIndex === -1
+          ? commandHistory.length - 1
+          : Math.max(0, historyIndex - 1);
     } else {
-      if (historyIndex === -1) {
-        return currentInput;
-      } else if (historyIndex < commandHistory.length - 1) {
+      if (historyIndex === -1) return currentInput;
+      if (historyIndex < commandHistory.length - 1) {
         newIndex = historyIndex + 1;
       } else {
         set({ historyIndex: -1 });
@@ -132,11 +120,9 @@ export const useConsoleStore = create<ConsoleState>()((set, get) => ({
   setCurrentInput: (input) => set({ currentInput: input }),
   resetHistoryNavigation: () => set({ historyIndex: -1 }),
 
-  /* Connection status */
   connectionStatus: "disconnected",
   setConnectionStatus: (status) => set({ connectionStatus: status }),
 
-  /* Persistence */
   loadHistory: (serverId) => {
     try {
       const key = `${HISTORY_STORAGE_PREFIX}${serverId}`;
