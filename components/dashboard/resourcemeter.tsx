@@ -5,9 +5,9 @@ import { cn } from "@/lib/utils/cn";
 
 export interface ResourceMeterProps {
   label: string;
-  value: number; // 0-100 percentage
-  current: string; // e.g. "2.4 GB"
-  max: string; // e.g. "4 GB"
+  value: number;
+  current: string;
+  max: string;
   icon: React.ReactNode;
   color: "blue" | "purple" | "green" | "orange" | "red";
   size?: "sm" | "md" | "lg";
@@ -52,10 +52,6 @@ const SIZE_MAP = {
   lg: { svgSize: 120, strokeWidth: 8, radius: 50, fontSize: "text-2xl" },
 } as const;
 
-/**
- * Animated circular progress meter for server resources.
- * Uses SVG with stroke-dasharray animation.
- */
 export function ResourceMeter({
   label,
   value,
@@ -69,7 +65,6 @@ export function ResourceMeter({
   const dims = SIZE_MAP[size];
   const clampedValue = Math.min(100, Math.max(0, value));
 
-  // Determine dynamic color based on usage threshold
   const dynamicColor = useMemo(() => {
     if (clampedValue >= 90) return COLOR_MAP.red;
     if (clampedValue >= 75) return COLOR_MAP.orange;
@@ -87,7 +82,7 @@ export function ResourceMeter({
           width={dims.svgSize}
           height={dims.svgSize}
           viewBox={`0 0 ${dims.svgSize} ${dims.svgSize}`}
-          className="-rotate-90"
+          className="transform -rotate-90"
         >
           {/* Track */}
           <circle
@@ -106,11 +101,9 @@ export function ResourceMeter({
             fill="none"
             strokeWidth={dims.strokeWidth}
             strokeLinecap="round"
+            strokeDasharray={circumference}
+            strokeDashoffset={dashOffset}
             className={cn(dynamicColor.stroke, "transition-all duration-700 ease-out")}
-            style=
-              strokeDasharray: circumference,
-              strokeDashoffset: dashOffset,
-            
           />
         </svg>
 
@@ -123,14 +116,14 @@ export function ResourceMeter({
       </div>
 
       {/* Label + icon */}
-      <div className="flex items-center gap-2">
-        <span className={cn("flex-shrink-0", dynamicColor.text)}>{icon}</span>
-        <span className="text-sm font-semibold text-text-primary">{label}</span>
+      <div className="flex items-center gap-1.5 text-text-secondary text-sm">
+        <span className={dynamicColor.text}>{icon}</span>
+        <span>{label}</span>
       </div>
 
       {/* Current / Max */}
       <p className="text-xs text-text-tertiary">
-        {current} <span className="text-text-tertiary/50">/</span> {max}
+        {current} / {max}
       </p>
     </div>
   );
